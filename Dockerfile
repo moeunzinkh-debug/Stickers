@@ -1,10 +1,7 @@
-# ប្រើ Python 3.11 slim ជាមូលដ្ឋាន
+# ប្រើ Python 3.11 (មិនមែន 3.14)
 FROM python:3.11-slim
 
-# ប្តូរទៅ root ដើម្បីដំឡើង packages
-USER root
-
-# ដំឡើង ffmpeg និង dependencies ដែលត្រូវការ
+# ដំឡើង ffmpeg និង dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
@@ -18,7 +15,7 @@ RUN apt-get update && \
 # កំណត់ working directory
 WORKDIR /app
 
-# ចម្លង requirements ជាមុន (សម្រាប់ cache layer)
+# ចម្លង requirements ជាមុន
 COPY requirements.txt .
 
 # ដំឡើង Python dependencies
