@@ -51,6 +51,17 @@ def process_video_sticker(input_path: Path, output_path: Path):
         return False
 
 
+# ============ EMOJI HANDLING ============
+def extract_emojis(text):
+    """Extract emoji from text properly."""
+    if not text:
+        return ["😊"]
+    
+    import emoji
+    emojis = [char for char in text if char in emoji.EMOJI_DATA]
+    return emojis if emojis else ["😊"]
+
+
 # ============ HANDLERS ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -84,13 +95,6 @@ async def set_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ADDING_STICKERS
 
 
-def extract_emojis(text):
-    """Extract emoji from text properly."""
-    import emoji
-    emojis = [char for char in text if char in emoji.EMOJI_DATA]
-    return emojis if emojis else ["😊"]
-
-
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     set_name = context.user_data.get('sticker_set_name')
     set_title = context.user_data.get('sticker_set_title')
@@ -100,10 +104,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("សូមផ្ញើ /start ជាមុនសិន!")
         return ADDING_STICKERS
 
+    # យក caption ពី message
+    caption = update.message.caption if update.message.caption else ""
+    emojis = extract_emojis(caption)
+    
+    print(f"[DEBUG] Photo caption: '{caption}'")
+    print(f"[DEBUG] Emojis extracted: {emojis}")
+
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="upload_photo")
     photo_file = await update.message.photo[-1].get_file()
-    
-    emojis = extract_emojis(update.message.caption) if update.message.caption else ["😊"]
 
     with tempfile.TemporaryDirectory() as temp_dir:
         raw_path = Path(temp_dir) / "raw.png"
@@ -118,9 +127,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     name=set_name,
                     sticker=InputSticker(sticker=sticker_file, emoji_list=emojis),
                 )
-            await update.message.reply_text(f"បានបន្ថែម Sticker ទៅក្នុង Set រួចរាល់!\nLink: t.me/addstickers/{set_name}")
+            await update.message.reply_text(f"✅ បានបន្ថែម Sticker ទៅក្នុង Set រួចរាល់!\nLink: t.me/addstickers/{set_name}")
         except Exception as e:
             error_msg = str(e).lower()
+            print(f"[DEBUG] Error: {e}")
             if any(x in error_msg for x in ["not found", "stickerset_invalid", "doesn't exist"]):
                 with open(processed_path, 'rb') as sticker_file:
                     await context.bot.create_new_sticker_set(
@@ -130,9 +140,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         stickers=[InputSticker(sticker=sticker_file, emoji_list=emojis)],
                         sticker_format="static",
                     )
-                await update.message.reply_text(f"បានបង្កើត Sticker Set ថ្មី៖ t.me/addstickers/{set_name}")
+                await update.message.reply_text(f"✅ បានបង្កើត Sticker Set ថ្មី៖ t.me/addstickers/{set_name}")
             else:
-                await update.message.reply_text(f"កំហុស៖ {e}")
+                await update.message.reply_text(f"❌ កំហុស៖ {e}")
                 
     return ADDING_STICKERS
 
@@ -147,10 +157,15 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("សូមផ្ញើ /start ជាមុនសិន!")
         return ADDING_STICKERS
 
+    # យក caption ពី message
+    caption = update.message.caption if update.message.caption else ""
+    emojis = extract_emojis(caption)
+    
+    print(f"[DEBUG] Video caption: '{caption}'")
+    print(f"[DEBUG] Emojis extracted: {emojis}")
+
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="upload_video")
     video_file = await video.get_file()
-    
-    emojis = extract_emojis(update.message.caption) if update.message.caption else ["😊"]
 
     with tempfile.TemporaryDirectory() as temp_dir:
         raw_path = Path(temp_dir) / "raw.mp4"
@@ -159,7 +174,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         file_size = raw_path.stat().st_size
         if file_size > 50 * 1024 * 1024:
-            await update.message.reply_text("វីដេអូធំពេក! សូមផ្ញើវីដេអូតិចជាង 50MB។")
+            await update.message.reply_text("❌ វីដេអូធំពេក! សូមផ្ញើវីដេអូតិចជាង 50MB។")
             return ADDING_STICKERS
         
         if process_video_sticker(raw_path, processed_path):
@@ -170,9 +185,10 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         name=set_name,
                         sticker=InputSticker(sticker=sticker_file, emoji_list=emojis),
                     )
-                await update.message.reply_text(f"បានបន្ថែម Video Sticker រួចរាល់!\nLink: t.me/addstickers/{set_name}")
+                await update.message.reply_text(f"✅ បានបន្ថែម Video Sticker រួចរាល់!\nLink: t.me/addstickers/{set_name}")
             except Exception as e:
                 error_msg = str(e).lower()
+                print(f"[DEBUG] Error: {e}")
                 if any(x in error_msg for x in ["not found", "stickerset_invalid", "doesn't exist"]):
                     with open(processed_path, 'rb') as sticker_file:
                         await context.bot.create_new_sticker_set(
@@ -182,11 +198,11 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             stickers=[InputSticker(sticker=sticker_file, emoji_list=emojis)],
                             sticker_format="video",
                         )
-                    await update.message.reply_text(f"បានបង្កើត Video Sticker Set ថ្មី៖ t.me/addstickers/{set_name}")
+                    await update.message.reply_text(f"✅ បានបង្កើត Video Sticker Set ថ្មី៖ t.me/addstickers/{set_name}")
                 else:
-                    await update.message.reply_text(f"កំហុស៖ {e}")
+                    await update.message.reply_text(f"❌ កំហុស៖ {e}")
         else:
-            await update.message.reply_text("មិនអាចកែច្នៃវីដេអូបានទេ។ សូមប្រាកដថា ffmpeg បានដំឡើង។")
+            await update.message.reply_text("❌ មិនអាចកែច្នៃវីដេអូបានទេ។ សូមប្រាកដថា ffmpeg បានដំឡើង។")
 
     return ADDING_STICKERS
 
@@ -194,14 +210,14 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     set_name = context.user_data.get('sticker_set_name')
     if set_name:
-        await update.message.reply_text(f"រួចរាល់! ឆែកមើលទីនេះ៖ t.me/addstickers/{set_name}")
+        await update.message.reply_text(f"🎉 រួចរាល់! ឆែកមើលទីនេះ៖ t.me/addstickers/{set_name}")
     else:
-        await update.message.reply_text("រួចរាល់! សូមផ្ញើ /start ដើម្បីបង្កើត Sticker Set ថ្មី។")
+        await update.message.reply_text("🎉 រួចរាល់! សូមផ្ញើ /start ដើម្បីបង្កើត Sticker Set ថ្មី។")
     return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("បានបោះបង់! សូមផ្ញើ /start ដើម្បីចាប់ផ្តើមឡើងវិញ។")
+    await update.message.reply_text("❌ បានបោះបង់! សូមផ្ញើ /start ដើម្បីចាប់ផ្តើមឡើងវិញ។")
     return ConversationHandler.END
 
 
