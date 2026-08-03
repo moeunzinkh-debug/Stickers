@@ -12,7 +12,7 @@ from aiohttp import web
 
 # ============ CONFIGURATION ============
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # ឧទាហរណ៍៖ https://your-app.onrender.com
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 PORT = int(os.environ.get("PORT", 8000))
 
 # Conversation states
@@ -116,7 +116,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.add_sticker_to_set(
                     user_id=user_id,
                     name=set_name,
-                    sticker=InputSticker(sticker=sticker_file, emoji_list=emojis, format="static"),
+                    sticker=InputSticker(sticker=sticker_file, emoji_list=emojis),
                 )
             await update.message.reply_text(f"បានបន្ថែម Sticker ទៅក្នុង Set រួចរាល់!\nLink: t.me/addstickers/{set_name}")
         except Exception as e:
@@ -127,7 +127,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         user_id=user_id,
                         name=set_name,
                         title=set_title,
-                        stickers=[InputSticker(sticker=sticker_file, emoji_list=emojis, format="static")],
+                        stickers=[InputSticker(sticker=sticker_file, emoji_list=emojis)],
+                        sticker_format="static",
                     )
                 await update.message.reply_text(f"បានបង្កើត Sticker Set ថ្មី៖ t.me/addstickers/{set_name}")
             else:
@@ -156,9 +157,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         processed_path = Path(temp_dir) / "processed.webm"
         await video_file.download_to_drive(raw_path)
         
-        # ពិនិត្យទំហំឯកសារ
         file_size = raw_path.stat().st_size
-        if file_size > 50 * 1024 * 1024:  # 50MB limit
+        if file_size > 50 * 1024 * 1024:
             await update.message.reply_text("វីដេអូធំពេក! សូមផ្ញើវីដេអូតិចជាង 50MB។")
             return ADDING_STICKERS
         
@@ -168,7 +168,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.add_sticker_to_set(
                         user_id=user_id,
                         name=set_name,
-                        sticker=InputSticker(sticker=sticker_file, emoji_list=emojis, format="video"),
+                        sticker=InputSticker(sticker=sticker_file, emoji_list=emojis),
                     )
                 await update.message.reply_text(f"បានបន្ថែម Video Sticker រួចរាល់!\nLink: t.me/addstickers/{set_name}")
             except Exception as e:
@@ -179,7 +179,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             user_id=user_id,
                             name=set_name,
                             title=set_title,
-                            stickers=[InputSticker(sticker=sticker_file, emoji_list=emojis, format="video")],
+                            stickers=[InputSticker(sticker=sticker_file, emoji_list=emojis)],
+                            sticker_format="video",
                         )
                     await update.message.reply_text(f"បានបង្កើត Video Sticker Set ថ្មី៖ t.me/addstickers/{set_name}")
                 else:
@@ -206,12 +207,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ WEBHOOK SERVER ============
 async def health_check(request):
-    """Health check endpoint for Render."""
     return web.Response(text="✅ Bot is alive!", status=200)
 
 
 async def webhook_handler(request):
-    """Handle Telegram webhook updates."""
     application = request.app['telegram_app']
     data = await request.json()
     update = Update.de_json(data, application.bot)
@@ -220,7 +219,6 @@ async def webhook_handler(request):
 
 
 async def setup_webhook(application: Application):
-    """Setup webhook with Telegram."""
     await application.bot.set_webhook(
         url=f"{WEBHOOK_URL}/webhook",
         allowed_updates=Update.ALL_TYPES
@@ -229,10 +227,8 @@ async def setup_webhook(application: Application):
 
 # ============ MAIN ============
 async def main():
-    # បង្កើត Telegram Application
     application = Application.builder().token(TOKEN).build()
     
-    # Conversation Handler
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -248,18 +244,15 @@ async def main():
     )
     application.add_handler(conv_handler)
     
-    # បង្កើត HTTP Server
     app = web.Application()
     app['telegram_app'] = application
     app.router.add_get('/', health_check)
     app.router.add_post('/webhook', webhook_handler)
     
-    # Initialize និង setup webhook
     await application.initialize()
     await application.start()
     await setup_webhook(application)
     
-    # រត់ server
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', PORT)
@@ -267,9 +260,8 @@ async def main():
     print(f"🔗 Webhook URL: {WEBHOOK_URL}/webhook")
     await site.start()
     
-    # រង់ចាំជារៀងរហូត
     while True:
-        await asyncio.sleep(3600)  # រង់ចាំ 1 ម៉ោង
+        await asyncio.sleep(3600)
 
 
 if __name__ == '__main__':
