@@ -1,0 +1,34 @@
+# ប្រើ Python 3.11 slim ជាមូលដ្ឋាន
+FROM python:3.11-slim
+
+# ប្តូរទៅ root ដើម្បីដំឡើង packages
+USER root
+
+# ដំឡើង ffmpeg និង dependencies ដែលត្រូវការ
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libsm6 \
+        libxext6 \
+        libgl1 \
+        && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# កំណត់ working directory
+WORKDIR /app
+
+# ចម្លង requirements ជាមុន (សម្រាប់ cache layer)
+COPY requirements.txt .
+
+# ដំឡើង Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ចម្លងកូដទាំងអស់
+COPY . .
+
+# បើក port 8000
+EXPOSE 8000
+
+# រត់ bot
+CMD ["python", "main.py"]
