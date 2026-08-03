@@ -6,8 +6,8 @@ import subprocess
 import asyncio
 from pathlib import Path
 from PIL import Image
-from telegram import Update, InputSticker
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram import Update, InputSticker, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 from aiohttp import web
 
 # ============ CONFIGURATION ============
@@ -16,12 +16,96 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 PORT = int(os.environ.get("PORT", 8000))
 
 # Conversation states
-SETTING_NAME, SETTING_TITLE, ADDING_STICKERS = range(3)
+SELECTING_LANGUAGE, SETTING_NAME, SETTING_TITLE, ADDING_STICKERS = range(4)
+
+# Language data
+LANG = {
+    "en": {
+        "welcome": "👋 *Welcome to Sticker Bot!*\n\nI will help you create your own Telegram Sticker Set.",
+        "how_to_use": (
+            "📌 *How to use:*\n"
+            "1️⃣ Send a name for your sticker set (e.g., `mystickers`)\n"
+            "2️⃣ Send a title for your sticker set\n"
+            "3️⃣ Send photos or videos to add as stickers\n"
+            "   • No caption → default emoji 😊\n"
+            "   • With emoji in caption → uses that emoji\n"
+            "4️⃣ Send /done when finished\n\n"
+            "💡 You can create multiple sticker sets anytime by sending /start again!"
+        ),
+        "choose_lang": "🌐 Please choose your language:",
+        "lang_set": "✅ Language set to English!",
+        "invalid_name": "❌ Invalid name. Use only English letters (a-z) and numbers (0-9):",
+        "name_set": "✅ Name set: `{name}`\nNow send a title for your Sticker Set:",
+        "title_empty": "❌ Title cannot be empty. Please send a title:",
+        "title_set": (
+            "✅ Title set: *{title}*\n\n"
+            "Now send me photos or videos.\n"
+            "• No caption → default emoji 😊\n"
+            "• With emoji in caption → uses that emoji\n"
+            "Send /done when finished."
+        ),
+        "send_start_first": "⚠️ Please send /start first!",
+        "sticker_added": "✅ Sticker added!\nEmoji: {emoji}\nLink: t.me/addstickers/{name}",
+        "set_created": "✅ New Sticker Set created!\nEmoji: {emoji}\nLink: t.me/addstickers/{name}",
+        "video_too_large": "❌ Video too large! Please send under 50MB.",
+        "video_error": "❌ Could not process video. Make sure ffmpeg is installed.",
+        "done": (
+            "🎉 Done! Your sticker set:\nt.me/addstickers/{name}\n\n"
+            "Want to add more? Just send photos/videos here!\n"
+            "Want a new set? Send /start"
+        ),
+        "cancelled": "❌ Cancelled! Send /start to begin again.",
+        "add_more": "📎 Send more photos/videos to add to this set, or /done to finish.",
+    },
+    "kh": {
+        "welcome": "👋 *សូមស្វាគមន៍មកកាន់ Sticker Bot!*\n\nខ្ញុំនឹងជួយអ្នកបង្កើត Sticker Set ផ្ទាល់ខ្លួននៅ Telegram។",
+        "how_to_use": (
+            "📌 *របៀបប្រើប្រាស់:*\n"
+            "1️⃣ ផ្ញើឈ្មោះសម្រាប់ Sticker Set (ឧទាហរណ៍៖ `mystickers`)\n"
+            "2️⃣ ផ្ញើចំណងជើងសម្រាប់ Sticker Set\n"
+            "3️⃣ ផ្ញើរូបភាព ឬ វីដេអូ ដើម្បីបន្ថែមជា Sticker\n"
+            "   • គ្មាន caption → emoji លំនាំដើម 😊\n"
+            "   • មាន emoji ក្នុង caption → ប្រើ emoji នោះ\n"
+            "4️⃣ ផ្ញើ /done នៅពេលរួចរាល់\n\n"
+            "💡 អ្នកអាចបង្កើត Sticker Set ថ្មីបានគ្រប់ពេលដោយផ្ញើ /start ម្តងទៀត!"
+        ),
+        "choose_lang": "🌐 សូមជ្រើសរើសភាសារបស់អ្នក៖",
+        "lang_set": "✅ ភាសាត្រូវបានកំណត់ជាខ្មែរ!",
+        "invalid_name": "❌ ឈ្មោះមិនត្រឹមត្រូវ។ សូមប្រើអក្សរឡាតាំង (a-z) និងលេខ (0-9)៖",
+        "name_set": "✅ ឈ្មោះបានកំណត់៖ `{name}`\nឥឡូវនេះ សូមផ្ញើចំណងជើង៖",
+        "title_empty": "❌ ចំណងជើងមិនអាចទទេបានទេ។ សូមផ្ញើចំណងជើង៖",
+        "title_set": (
+            "✅ ចំណងជើងបានកំណត់៖ *{title}*\n\n"
+            "ឥឡូវនេះ សូមផ្ញើរូបភាព ឬ វីដេអូ។\n"
+            "• គ្មាន caption → emoji លំនាំដើម 😊\n"
+            "• មាន emoji ក្នុង caption → ប្រើ emoji នោះ\n"
+            "ផ្ញើ /done នៅពេលរួចរាល់។"
+        ),
+        "send_start_first": "⚠️ សូមផ្ញើ /start ជាមុនសិន!",
+        "sticker_added": "✅ បានបន្ថែម Sticker!\nEmoji៖ {emoji}\nLink៖ t.me/addstickers/{name}",
+        "set_created": "✅ បានបង្កើត Sticker Set ថ្មី!\nEmoji៖ {emoji}\nLink៖ t.me/addstickers/{name}",
+        "video_too_large": "❌ វីដេអូធំពេក! សូមផ្ញើតិចជាង 50MB។",
+        "video_error": "❌ មិនអាចកែច្នៃវីដេអូបានទេ។ សូមប្រាកដថា ffmpeg បានដំឡើង។",
+        "done": (
+            "🎉 រួចរាល់! Sticker Set របស់អ្នក៖\nt.me/addstickers/{name}\n\n"
+            "ចង់បន្ថែមទៀត? ផ្ញើរូប/វីដេអូមកទីនេះ!\n"
+            "ចង់បង្កើត Set ថ្មី? ផ្ញើ /start"
+        ),
+        "cancelled": "❌ បានបោះបង់! ផ្ញើ /start ដើម្បីចាប់ផ្តើមឡើងវិញ។",
+        "add_more": "📎 ផ្ញើរូប/វីដេអូបន្ថែមទៀត ឬ /done ដើម្បីបញ្ចប់។",
+    }
+}
+
+
+def get_text(context, key, **kwargs):
+    """Get text in user's selected language."""
+    lang = context.user_data.get("lang", "en")
+    text = LANG.get(lang, LANG["en"]).get(key, key)
+    return text.format(**kwargs) if kwargs else text
 
 
 # ============ STICKER PROCESSING ============
 def prepare_sticker_image(input_path: Path, output_path: Path):
-    """Resize image to 512x512 as required by Telegram."""
     with Image.open(input_path) as img:
         ratio = min(512 / img.width, 512 / img.height)
         new_size = (int(img.width * ratio), int(img.height * ratio))
@@ -32,7 +116,6 @@ def prepare_sticker_image(input_path: Path, output_path: Path):
 
 
 def process_video_sticker(input_path: Path, output_path: Path):
-    """Process video to meet Telegram requirements: .webm, 512x512, <3s, <256KB."""
     try:
         subprocess.run([
             'ffmpeg', '-y', '-i', str(input_path),
@@ -51,28 +134,23 @@ def process_video_sticker(input_path: Path, output_path: Path):
         return False
 
 
-# ============ EMOJI HANDLING ============
 def extract_emojis(text):
-    """Extract emoji from text. Returns default 😊 if no emoji found."""
     if not text:
         return ["😊"]
-    
     try:
         import emoji
         emojis = [char for char in text if char in emoji.EMOJI_DATA]
         return emojis if emojis else ["😊"]
     except ImportError:
-        # Fallback if emoji library not available
         emoji_pattern = re.compile(
             "["
-            "\U0001F600-\U0001F64F"  # emoticons
-            "\U0001F300-\U0001F5FF"  # symbols & pictographs
-            "\U0001F680-\U0001F6FF"  # transport & map symbols
-            "\U0001F1E0-\U0001F1FF"  # flags
+            "\U0001F600-\U0001F64F"
+            "\U0001F300-\U0001F5FF"
+            "\U0001F680-\U0001F6FF"
+            "\U0001F1E0-\U0001F1FF"
             "\U00002702-\U000027B0"
             "\U000024C2-\U0001F251"
-            "]+",
-            flags=re.UNICODE
+            "]+", flags=re.UNICODE
         )
         emojis = emoji_pattern.findall(text)
         return emojis if emojis else ["😊"]
@@ -80,28 +158,39 @@ def extract_emojis(text):
 
 # ============ HANDLERS ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = (
-        "👋 *Welcome to Sticker Bot!*\n\n"
-        "I will help you create your own Telegram Sticker Set.\n\n"
-        "📌 *How to use:*\n"
-        "1️⃣ Send me a name for your sticker set (e.g., `mystickers`)\n"
-        "2️⃣ Send me a title for your sticker set\n"
-        "3️⃣ Send me photos or videos to add as stickers\n"
-        "   • Send photo/video *without caption* → uses default emoji 😊\n"
-        "   • Send photo/video *with caption containing emoji* → uses that emoji\n"
-        "4️⃣ Send /done when you're finished\n\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "👋 *សូមស្វាគមន៍មកកាន់ Sticker Bot!*\n\n"
-        "ខ្ញុំនឹងជួយអ្នកបង្កើត Sticker Set ផ្ទាល់ខ្លួននៅ Telegram។\n\n"
-        "📌 *របៀបប្រើប្រាស់:*\n"
-        "1️⃣ ផ្ញើឈ្មោះសម្រាប់ Sticker Set (ឧទាហរណ៍៖ `mystickers`)\n"
-        "2️⃣ ផ្ញើចំណងជើងសម្រាប់ Sticker Set\n"
-        "3️⃣ ផ្ញើរូបភាព ឬ វីដេអូ ដើម្បីបន្ថែមជា Sticker\n"
-        "   • ផ្ញើរូប/វីដេអូ *ដោយមិនមាន caption* → ប្រើ emoji លំនាំដើម 😊\n"
-        "   • ផ្ញើរូប/វីដេអូ *ជាមួយ caption មាន emoji* → ប្រើ emoji នោះ\n"
-        "4️⃣ ផ្ញើ /done នៅពេលរួចរាល់"
+    """Show language selection buttons."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
+            InlineKeyboardButton("🇰🇭 ខ្មែរ", callback_data="lang_kh"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "🌐 *Please choose your language / សូមជ្រើសរើសភាសា*",
+        parse_mode="Markdown",
+        reply_markup=reply_markup
     )
-    await update.message.reply_text(welcome_text, parse_mode="Markdown")
+    return SELECTING_LANGUAGE
+
+
+async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle language selection."""
+    query = update.callback_query
+    await query.answer()
+    
+    lang = "en" if query.data == "lang_en" else "kh"
+    context.user_data["lang"] = lang
+    
+    # Show welcome + how to use
+    welcome = get_text(context, "welcome")
+    how_to = get_text(context, "how_to_use")
+    
+    await query.edit_message_text(
+        f"{welcome}\n\n{how_to}",
+        parse_mode="Markdown"
+    )
     return SETTING_NAME
 
 
@@ -109,10 +198,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text.strip().lower()
     name = re.sub(r'[^a-z0-9]', '', name)
     if not name:
-        await update.message.reply_text(
-            "❌ Invalid name. Please send a name using only English letters (a-z) and numbers (0-9):\n\n"
-            "❌ ឈ្មោះមិនត្រឹមត្រូវ។ សូមផ្ញើឈ្មោះជាអក្សរឡាតាំង (a-z) និងលេខ (0-9)៖"
-        )
+        await update.message.reply_text(get_text(context, "invalid_name"))
         return SETTING_NAME
     
     bot_info = await context.bot.get_me()
@@ -122,10 +208,8 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['sticker_set_name'] = full_name
     
     await update.message.reply_text(
-        f"✅ Name set: `{full_name}`\n"
-        f"Now send a title for your Sticker Set:\n\n"
-        f"✅ ឈ្មោះបានកំណត់៖ `{full_name}`\n"
-        f"ឥឡូវនេះ សូមផ្ញើចំណងជើង (Title) សម្រាប់ Sticker Set៖"
+        get_text(context, "name_set", name=full_name),
+        parse_mode="Markdown"
     )
     return SETTING_TITLE
 
@@ -133,25 +217,13 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = update.message.text.strip()
     if not title:
-        await update.message.reply_text(
-            "❌ Title cannot be empty. Please send a title:\n\n"
-            "❌ ចំណងជើងមិនអាចទទេបានទេ។ សូមផ្ញើចំណងជើង៖"
-        )
+        await update.message.reply_text(get_text(context, "title_empty"))
         return SETTING_TITLE
     
     context.user_data['sticker_set_title'] = title
     await update.message.reply_text(
-        f"✅ Title set: *{title}*\n\n"
-        f"Now send me photos or videos to add as stickers.\n"
-        f"• No caption → default emoji 😊\n"
-        f"• With emoji in caption → uses that emoji\n"
-        f"Send /done when finished.\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"✅ ចំណងជើងបានកំណត់៖ *{title}*\n\n"
-        f"ឥឡូវនេះ សូមផ្ញើរូបភាព ឬ វីដេអូ ដើម្បីបន្ថែមជា Sticker។\n"
-        f"• គ្មាន caption → emoji លំនាំដើម 😊\n"
-        f"• មាន emoji ក្នុង caption → ប្រើ emoji នោះ\n"
-        f"ផ្ញើ /done នៅពេលរួចរាល់។"
+        get_text(context, "title_set", title=title),
+        parse_mode="Markdown"
     )
     return ADDING_STICKERS
 
@@ -162,18 +234,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     if not set_name or not set_title:
-        await update.message.reply_text(
-            "⚠️ Please send /start first!\n\n"
-            "⚠️ សូមផ្ញើ /start ជាមុនសិន!"
-        )
+        await update.message.reply_text(get_text(context, "send_start_first"))
         return ADDING_STICKERS
 
-    # យក caption ពី message (អាចទទេបាន)
     caption = update.message.caption if update.message.caption else ""
     emojis = extract_emojis(caption)
     
     print(f"[DEBUG] Photo caption: '{caption}'")
-    print(f"[DEBUG] Emojis extracted: {emojis}")
+    print(f"[DEBUG] Emojis: {emojis}")
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="upload_photo")
     photo_file = await update.message.photo[-1].get_file()
@@ -192,12 +260,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     sticker=InputSticker(sticker=sticker_file, emoji_list=emojis),
                 )
             await update.message.reply_text(
-                f"✅ Sticker added successfully!\n"
-                f"Emoji: {''.join(emojis)}\n"
-                f"Link: t.me/addstickers/{set_name}\n\n"
-                f"✅ បានបន្ថែម Sticker រួចរាល់!\n"
-                f"Emoji៖ {''.join(emojis)}\n"
-                f"Link៖ t.me/addstickers/{set_name}"
+                get_text(context, "sticker_added", emoji=''.join(emojis), name=set_name)
             )
         except Exception as e:
             error_msg = str(e).lower()
@@ -212,19 +275,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         sticker_format="static",
                     )
                 await update.message.reply_text(
-                    f"✅ New Sticker Set created!\n"
-                    f"Emoji: {''.join(emojis)}\n"
-                    f"Link: t.me/addstickers/{set_name}\n\n"
-                    f"✅ បានបង្កើត Sticker Set ថ្មី!\n"
-                    f"Emoji៖ {''.join(emojis)}\n"
-                    f"Link៖ t.me/addstickers/{set_name}"
+                    get_text(context, "set_created", emoji=''.join(emojis), name=set_name)
                 )
             else:
-                await update.message.reply_text(
-                    f"❌ Error: {e}\n\n"
-                    f"❌ កំហុស៖ {e}"
-                )
+                await update.message.reply_text(f"❌ Error: {e}")
                 
+    # អនុញ្ញាតឲ្យបន្ថែមទៀត
     return ADDING_STICKERS
 
 
@@ -235,18 +291,14 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     if not set_name or not set_title:
-        await update.message.reply_text(
-            "⚠️ Please send /start first!\n\n"
-            "⚠️ សូមផ្ញើ /start ជាមុនសិន!"
-        )
+        await update.message.reply_text(get_text(context, "send_start_first"))
         return ADDING_STICKERS
 
-    # យក caption ពី message (អាចទទេបាន)
     caption = update.message.caption if update.message.caption else ""
     emojis = extract_emojis(caption)
     
     print(f"[DEBUG] Video caption: '{caption}'")
-    print(f"[DEBUG] Emojis extracted: {emojis}")
+    print(f"[DEBUG] Emojis: {emojis}")
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="upload_video")
     video_file = await video.get_file()
@@ -258,10 +310,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         file_size = raw_path.stat().st_size
         if file_size > 50 * 1024 * 1024:
-            await update.message.reply_text(
-                "❌ Video too large! Please send a video under 50MB.\n\n"
-                "❌ វីដេអូធំពេក! សូមផ្ញើវីដេអូតិចជាង 50MB។"
-            )
+            await update.message.reply_text(get_text(context, "video_too_large"))
             return ADDING_STICKERS
         
         if process_video_sticker(raw_path, processed_path):
@@ -273,12 +322,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         sticker=InputSticker(sticker=sticker_file, emoji_list=emojis),
                     )
                 await update.message.reply_text(
-                    f"✅ Video Sticker added!\n"
-                    f"Emoji: {''.join(emojis)}\n"
-                    f"Link: t.me/addstickers/{set_name}\n\n"
-                    f"✅ បានបន្ថែម Video Sticker រួចរាល់!\n"
-                    f"Emoji៖ {''.join(emojis)}\n"
-                    f"Link៖ t.me/addstickers/{set_name}"
+                    get_text(context, "sticker_added", emoji=''.join(emojis), name=set_name)
                 )
             except Exception as e:
                 error_msg = str(e).lower()
@@ -293,23 +337,12 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             sticker_format="video",
                         )
                     await update.message.reply_text(
-                        f"✅ New Video Sticker Set created!\n"
-                        f"Emoji: {''.join(emojis)}\n"
-                        f"Link: t.me/addstickers/{set_name}\n\n"
-                        f"✅ បានបង្កើត Video Sticker Set ថ្មី!\n"
-                        f"Emoji៖ {''.join(emojis)}\n"
-                        f"Link៖ t.me/addstickers/{set_name}"
+                        get_text(context, "set_created", emoji=''.join(emojis), name=set_name)
                     )
                 else:
-                    await update.message.reply_text(
-                        f"❌ Error: {e}\n\n"
-                        f"❌ កំហុស៖ {e}"
-                    )
+                    await update.message.reply_text(f"❌ Error: {e}")
         else:
-            await update.message.reply_text(
-                "❌ Could not process video. Please make sure ffmpeg is installed.\n\n"
-                "❌ មិនអាចកែច្នៃវីដេអូបានទេ។ សូមប្រាកដថា ffmpeg បានដំឡើង។"
-            )
+            await update.message.reply_text(get_text(context, "video_error"))
 
     return ADDING_STICKERS
 
@@ -318,26 +351,24 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     set_name = context.user_data.get('sticker_set_name')
     if set_name:
         await update.message.reply_text(
-            f"🎉 Done! Check your stickers here:\n"
-            f"t.me/addstickers/{set_name}\n\n"
-            f"🎉 រួចរាល់! ឆែកមើល Sticker នៅទីនេះ៖\n"
-            f"t.me/addstickers/{set_name}\n\n"
-            f"Send /start to create a new set.\n"
-            f"ផ្ញើ /start ដើម្បីបង្កើត Set ថ្មី។"
+            get_text(context, "done", name=set_name)
         )
     else:
-        await update.message.reply_text(
-            "🎉 Done! Send /start to create a new Sticker Set.\n\n"
-            "🎉 រួចរាល់! ផ្ញើ /start ដើម្បីបង្កើត Sticker Set ថ្មី។"
-        )
+        await update.message.reply_text(get_text(context, "cancelled"))
+    
+    # លុបទិន្នន័យបណ្តោះអាសន្ន ប៉ុន្តែរក្សាភាសា
+    lang = context.user_data.get("lang", "en")
+    context.user_data.clear()
+    context.user_data["lang"] = lang
+    
     return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "❌ Cancelled! Send /start to begin again.\n\n"
-        "❌ បានបោះបង់! ផ្ញើ /start ដើម្បីចាប់ផ្តើមឡើងវិញ។"
-    )
+    lang = context.user_data.get("lang", "en")
+    context.user_data.clear()
+    context.user_data["lang"] = lang
+    await update.message.reply_text(get_text(context, "cancelled"))
     return ConversationHandler.END
 
 
@@ -368,6 +399,7 @@ async def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
+            SELECTING_LANGUAGE: [CallbackQueryHandler(language_callback, pattern="^lang_")],
             SETTING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_name)],
             SETTING_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_title)],
             ADDING_STICKERS: [
