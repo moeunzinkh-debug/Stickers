@@ -16,7 +16,10 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 PORT = int(os.environ.get("PORT", 8000))
 
 # Conversation states
-SELECTING_LANGUAGE, SETTING_NAME, SETTING_TITLE, ADDING_STICKERS = range(4)
+SELECTING_LANGUAGE, SETTING_NAME, SETTING_TITLE, ADDING_STICKERS, SELECTING_SET_TO_ADD = range(5)
+
+# Store sticker sets per user (in-memory, use DB for production)
+USER_STICKER_SETS = {}
 
 # Language data
 LANG = {
@@ -24,13 +27,11 @@ LANG = {
         "welcome": "👋 *Welcome to Sticker Bot!*\n\nI will help you create your own Telegram Sticker Set.",
         "how_to_use": (
             "📌 *How to use:*\n"
-            "1️⃣ Send a name for your sticker set (e.g., `mystickers`)\n"
-            "2️⃣ Send a title for your sticker set\n"
-            "3️⃣ Send photos or videos to add as stickers\n"
-            "   • No caption → default emoji 😊\n"
-            "   • With emoji in caption → uses that emoji\n"
-            "4️⃣ Send /done when finished\n\n"
-            "💡 You can create multiple sticker sets anytime by sending /start again!"
+            "• /start or /new — Create a new sticker set\n"
+            "• /add — Add stickers to an existing set\n"
+            "• /list — View your sticker sets\n"
+            "• /done — Finish adding stickers\n\n"
+            "_Send photos or videos with optional emoji caption!_"
         ),
         "choose_lang": "🌐 Please choose your language:",
         "lang_set": "✅ Language set to English!",
@@ -51,23 +52,27 @@ LANG = {
         "video_error": "❌ Could not process video. Make sure ffmpeg is installed.",
         "done": (
             "🎉 Done! Your sticker set:\nt.me/addstickers/{name}\n\n"
-            "Want to add more? Just send photos/videos here!\n"
-            "Want a new set? Send /start"
+            "Commands:\n"
+            "• /add — Add more stickers to this set\n"
+            "• /new — Create a new set\n"
+            "• /list — View all your sets"
         ),
+        "no_sets": "📭 You don't have any sticker sets yet.\nSend /start to create one!",
+        "your_sets": "📂 *Your Sticker Sets:*\n\n",
+        "select_set": "🔽 Select a sticker set to add stickers to:",
+        "set_selected": "✅ Selected: *{title}*\nSend me photos or videos to add!\nSend /done when finished.",
         "cancelled": "❌ Cancelled! Send /start to begin again.",
         "add_more": "📎 Send more photos/videos to add to this set, or /done to finish.",
     },
     "kh": {
         "welcome": "👋 *សូមស្វាគមន៍មកកាន់ Sticker Bot!*\n\nខ្ញុំនឹងជួយអ្នកបង្កើត Sticker Set ផ្ទាល់ខ្លួននៅ Telegram។",
         "how_to_use": (
-            "📌 *របៀបប្រើប្រាស់:*\n"
-            "1️⃣ ផ្ញើឈ្មោះសម្រាប់ Sticker Set (ឧទាហរណ៍៖ `mystickers`)\n"
-            "2️⃣ ផ្ញើចំណងជើងសម្រាប់ Sticker Set\n"
-            "3️⃣ ផ្ញើរូបភាព ឬ វីដេអូ ដើម្បីបន្ថែមជា Sticker\n"
-            "   • គ្មាន caption → emoji លំនាំដើម 😊\n"
-            "   • មាន emoji ក្នុង caption → ប្រើ emoji នោះ\n"
-            "4️⃣ ផ្ញើ /done នៅពេលរួចរាល់\n\n"
-            "💡 អ្នកអាចបង្កើត Sticker Set ថ្មីបានគ្រប់ពេលដោយផ្ញើ /start ម្តងទៀត!"
+            "📌 *របៀបប្រើប្រាស់៖*\n"
+            "• /start ឬ /new — បង្កើត Sticker Set ថ្មី\n"
+            "• /add — បន្ថែម Sticker ទៅ Set ដែលមានស្រាប់\n"
+            "• /list — មើល Sticker Set ទាំងអស់របស់អ្នក\n"
+            "• /done — បញ្ចប់ការបន្ថែម Sticker\n\n"
+            "_ផ្ញើរូបភាព ឬ វីដេអូ ជាមួយឬគ្មាន emoji caption!_"
         ),
         "choose_lang": "🌐 សូមជ្រើសរើសភាសារបស់អ្នក៖",
         "lang_set": "✅ ភាសាត្រូវបានកំណត់ជាខ្មែរ!",
@@ -88,9 +93,15 @@ LANG = {
         "video_error": "❌ មិនអាចកែច្នៃវីដេអូបានទេ។ សូមប្រាកដថា ffmpeg បានដំឡើង។",
         "done": (
             "🎉 រួចរាល់! Sticker Set របស់អ្នក៖\nt.me/addstickers/{name}\n\n"
-            "ចង់បន្ថែមទៀត? ផ្ញើរូប/វីដេអូមកទីនេះ!\n"
-            "ចង់បង្កើត Set ថ្មី? ផ្ញើ /start"
+            "Commands៖\n"
+            "• /add — បន្ថែម Sticker ទៅ Set នេះ\n"
+            "• /new — បង្កើត Set ថ្មី\n"
+            "• /list — មើល Set ទាំងអស់"
         ),
+        "no_sets": "📭 អ្នកមិនទាន់មាន Sticker Set ទេ។\nផ្ញើ /start ដើម្បីបង្កើត!",
+        "your_sets": "📂 *Sticker Set របស់អ្នក៖*\n\n",
+        "select_set": "🔽 ជ្រើសរើស Sticker Set ដើម្បីបន្ថែម Sticker៖",
+        "set_selected": "✅ បានជ្រើសរើស៖ *{title}*\nផ្ញើរូបភាព ឬ វីដេអូមកខ្ញុំ!\nផ្ញើ /done នៅពេលរួចរាល់។",
         "cancelled": "❌ បានបោះបង់! ផ្ញើ /start ដើម្បីចាប់ផ្តើមឡើងវិញ។",
         "add_more": "📎 ផ្ញើរូប/វីដេអូបន្ថែមទៀត ឬ /done ដើម្បីបញ្ចប់។",
     }
@@ -98,10 +109,19 @@ LANG = {
 
 
 def get_text(context, key, **kwargs):
-    """Get text in user's selected language."""
     lang = context.user_data.get("lang", "en")
     text = LANG.get(lang, LANG["en"]).get(key, key)
     return text.format(**kwargs) if kwargs else text
+
+
+def get_user_sets(user_id):
+    return USER_STICKER_SETS.get(user_id, [])
+
+
+def add_user_set(user_id, set_name, set_title):
+    if user_id not in USER_STICKER_SETS:
+        USER_STICKER_SETS[user_id] = []
+    USER_STICKER_SETS[user_id].append({"name": set_name, "title": set_title})
 
 
 # ============ STICKER PROCESSING ============
@@ -158,7 +178,6 @@ def extract_emojis(text):
 
 # ============ HANDLERS ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show language selection buttons."""
     keyboard = [
         [
             InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
@@ -176,14 +195,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle language selection."""
     query = update.callback_query
     await query.answer()
     
     lang = "en" if query.data == "lang_en" else "kh"
     context.user_data["lang"] = lang
     
-    # Show welcome + how to use
     welcome = get_text(context, "welcome")
     how_to = get_text(context, "how_to_use")
     
@@ -221,6 +238,12 @@ async def set_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return SETTING_TITLE
     
     context.user_data['sticker_set_title'] = title
+    
+    # Save to user's list
+    user_id = update.effective_user.id
+    set_name = context.user_data['sticker_set_name']
+    add_user_set(user_id, set_name, title)
+    
     await update.message.reply_text(
         get_text(context, "title_set", title=title),
         parse_mode="Markdown"
@@ -280,7 +303,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text(f"❌ Error: {e}")
                 
-    # អនុញ្ញាតឲ្យបន្ថែមទៀត
     return ADDING_STICKERS
 
 
@@ -356,12 +378,79 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(get_text(context, "cancelled"))
     
-    # លុបទិន្នន័យបណ្តោះអាសន្ន ប៉ុន្តែរក្សាភាសា
+    # Keep language, clear other data
     lang = context.user_data.get("lang", "en")
     context.user_data.clear()
     context.user_data["lang"] = lang
     
     return ConversationHandler.END
+
+
+# ============ NEW COMMANDS ============
+async def new_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start creating a new sticker set."""
+    return await start(update, context)
+
+
+async def list_sets(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List all sticker sets created by user."""
+    user_id = update.effective_user.id
+    sets = get_user_sets(user_id)
+    
+    if not sets:
+        await update.message.reply_text(get_text(context, "no_sets"))
+        return
+    
+    text = get_text(context, "your_sets")
+    for i, s in enumerate(sets, 1):
+        text += f"{i}. *{s['title']}*\n   t.me/addstickers/{s['name']}\n\n"
+    
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def add_to_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show buttons to select which set to add stickers to."""
+    user_id = update.effective_user.id
+    sets = get_user_sets(user_id)
+    
+    if not sets:
+        await update.message.reply_text(get_text(context, "no_sets"))
+        return ConversationHandler.END
+    
+    keyboard = []
+    for s in sets:
+        keyboard.append([InlineKeyboardButton(s['title'], callback_data=f"add_{s['name']}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        get_text(context, "select_set"),
+        reply_markup=reply_markup
+    )
+    return SELECTING_SET_TO_ADD
+
+
+async def select_set_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle set selection for adding stickers."""
+    query = update.callback_query
+    await query.answer()
+    
+    set_name = query.data.replace("add_", "")
+    user_id = update.effective_user.id
+    sets = get_user_sets(user_id)
+    
+    selected = next((s for s in sets if s['name'] == set_name), None)
+    if not selected:
+        await query.edit_message_text("❌ Set not found.")
+        return ConversationHandler.END
+    
+    context.user_data['sticker_set_name'] = selected['name']
+    context.user_data['sticker_set_title'] = selected['title']
+    
+    await query.edit_message_text(
+        get_text(context, "set_selected", title=selected['title']),
+        parse_mode="Markdown"
+    )
+    return ADDING_STICKERS
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -396,8 +485,13 @@ async def setup_webhook(application: Application):
 async def main():
     application = Application.builder().token(TOKEN).build()
     
+    # Conversation handler for sticker creation/adding flow
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[
+            CommandHandler("start", start),
+            CommandHandler("new", new_set),
+            CommandHandler("add", add_to_set),
+        ],
         states={
             SELECTING_LANGUAGE: [CallbackQueryHandler(language_callback, pattern="^lang_")],
             SETTING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_name)],
@@ -407,10 +501,14 @@ async def main():
                 MessageHandler(filters.VIDEO | filters.ANIMATION, handle_video),
                 CommandHandler("done", done)
             ],
+            SELECTING_SET_TO_ADD: [CallbackQueryHandler(select_set_callback, pattern="^add_")],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     application.add_handler(conv_handler)
+    
+    # Standalone commands
+    application.add_handler(CommandHandler("list", list_sets))
     
     app = web.Application()
     app['telegram_app'] = application
