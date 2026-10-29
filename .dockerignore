@@ -10,3 +10,6 @@ venv/
 .gitignore
 README.md
 *.md
+node_modules/
+.wrangler/
+.dev.vars

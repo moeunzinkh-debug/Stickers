@@ -1,4 +1,5 @@
 import os
+import hmac
 import re
 import tempfile
 import uuid
@@ -13,6 +14,7 @@ from aiohttp import web
 # ============ CONFIGURATION ============
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
 PORT = int(os.environ.get("PORT", 8000))
 
 # Conversation states
@@ -468,6 +470,10 @@ async def health_check(request):
 
 
 async def webhook_handler(request):
+    if not WEBHOOK_SECRET or not hmac.compare_digest(
+        request.headers.get('X-Telegram-Bot-Api-Secret-Token', '').encode(), WEBHOOK_SECRET.encode()
+    ):
+        return web.Response(status=401)
     application = request.app['telegram_app']
     data = await request.json()
     update = Update.de_json(data, application.bot)
@@ -478,12 +484,16 @@ async def webhook_handler(request):
 async def setup_webhook(application: Application):
     await application.bot.set_webhook(
         url=f"{WEBHOOK_URL}/webhook",
-        allowed_updates=Update.ALL_TYPES
+        allowed_updates=Update.ALL_TYPES,
+        secret_token=WEBHOOK_SECRET,
+        max_connections=1,
     )
 
 
 # ============ MAIN ============
 async def main():
+    if not TOKEN or not WEBHOOK_SECRET:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET are required")
     application = Application.builder().token(TOKEN).build()
     
     conv_handler = ConversationHandler(
@@ -515,13 +525,16 @@ async def main():
     
     await application.initialize()
     await application.start()
-    await setup_webhook(application)
+    # Cloudflare installs the webhook separately; Render may still configure it here.
+    if WEBHOOK_URL:
+        await setup_webhook(application)
     
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     print(f"🚀 Server running on port {PORT}")
-    print(f"🔗 Webhook URL: {WEBHOOK_URL}/webhook")
+    if WEBHOOK_URL:
+        print(f"🔗 Webhook URL: {WEBHOOK_URL}/webhook")
     await site.start()
     
     while True:
